@@ -1,0 +1,15 @@
+[
+  {
+    "id": "HYP-0000",
+    "hypothesis": "Metamaterial-enhanced Casimir force at d=100.0nm produces engineering-relevant pressure",
+    "mathematical_prediction": "P_enhanced = -6.5006e+02 Pa",
+    "falsification_test": "AFM measurement with 100.0nm gap between metamaterial surfaces",
+    "required_sensitivity": "< 1.30e-01 Pa",
+    "domain": "exotic_physics",
+    "references": [],
+    "status": "proposed",
+    "timestamp": 1780081147.856033,
+    "results": null,
+    "conclusion": null
+  }
+]

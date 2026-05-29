@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JARVIS</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: transparent;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-end;
+            height: 100vh;
+            overflow: hidden;
+            user-select: none;
+            -webkit-app-region: drag;
+        }
+
+        /* ─── Chat Bubble ─── */
+        .chat-bubble {
+            position: absolute;
+            bottom: 260px;
+            background: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            border-radius: 16px;
+            padding: 14px 18px;
+            max-width: 320px;
+            min-width: 120px;
+            color: #e2e8f0;
+            font-size: 13px;
+            line-height: 1.5;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 20px rgba(59, 130, 246, 0.1);
+            opacity: 0;
+            transform: translateY(10px) scale(0.95);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            pointer-events: none;
+        }
+
+        .chat-bubble.visible {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+        }
+
+        .chat-bubble::after {
+            content: '';
+            position: absolute;
+            bottom: -8px;
+            left: 50%;
+            transform: translateX(-50%);
+            border-left: 8px solid transparent;
+            border-right: 8px solid transparent;
+            border-top: 8px solid rgba(15, 23, 42, 0.95);
+        }
+
+        /* ─── 3D Avatar Container ─── */
+        .avatar-container {
+            position: relative;
+            width: 200px;
+            height: 220px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            -webkit-app-region: no-drag;
+        }
+
+        /* ─── Floating Orb (JARVIS Core) ─── */
+        .orb {
+            position: absolute;
+            top: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background: radial-gradient(circle at 35% 35%,
+                rgba(96, 165, 250, 0.9),
+                rgba(59, 130, 246, 0.7),
+                rgba(37, 99, 235, 0.5),
+                rgba(29, 78, 216, 0.3)
+            );
+            box-shadow:
+                0 0 40px rgba(59, 130, 246, 0.4),
+                0 0 80px rgba(59, 130, 246, 0.2),
+                inset 0 0 30px rgba(147, 197, 253, 0.3);
+            animation: float 3s ease-in-out infinite, glow 2s ease-in-out infinite alternate;
+        }
+
+        .orb::before {
+            content: '';
+            position: absolute;
+            top: 15%;
+            left: 20%;
+            width: 30%;
+            height: 25%;
+            background: radial-gradient(ellipse, rgba(255,255,255,0.4), transparent);
+            border-radius: 50%;
+            transform: rotate(-15deg);
+        }
+
+        /* ─── Eyes ─── */
+        .eyes {
+            position: absolute;
+            top: 65px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 24px;
+            z-index: 2;
+        }
+
+        .eye {
+            width: 18px;
+            height: 22px;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 50%;
+            position: relative;
+            animation: blink 4s ease-in-out infinite;
+        }
+
+        .eye::after {
+            content: '';
+            position: absolute;
+            width: 9px;
+            height: 9px;
+            background: #1e293b;
+            border-radius: 50%;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            transition: all 0.15s;
+        }
+
+        /* ─── Mouth ─── */
+        .mouth {
+            position: absolute;
+            top: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 20px;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.7);
+            border-radius: 0 0 10px 10px;
+            z-index: 2;
+            transition: all 0.2s;
+        }
+
+        /* ─── Orbit Rings ─── */
+        .ring {
+            position: absolute;
+            top: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 160px;
+            height: 160px;
+            border: 1px solid rgba(59, 130, 246, 0.2);
+            border-radius: 50%;
+            animation: spin 8s linear infinite;
+        }
+
+        .ring:nth-child(2) {
+            width: 180px;
+            height: 180px;
+            top: 30px;
+            animation: spinReverse 12s linear infinite;
+            border-color: rgba(139, 92, 246, 0.15);
+        }
+
+        .ring-dot {
+            position: absolute;
+            width: 6px;
+            height: 6px;
+            background: rgba(96, 165, 250, 0.8);
+            border-radius: 50%;
+            top: -3px;
+            left: 50%;
+            box-shadow: 0 0 8px rgba(59, 130, 246, 0.5);
+        }
+
+        /* ─── Platform / Shadow ─── */
+        .platform {
+            width: 100px;
+            height: 12px;
+            background: radial-gradient(ellipse, rgba(59, 130, 246, 0.2), transparent);
+            border-radius: 50%;
+            margin-bottom: 10px;
+        }
+
+        /* ─── Status Bar ─── */
+        .status-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 14px;
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(59, 130, 246, 0.2);
+            border-radius: 20px;
+            font-size: 11px;
+            color: rgba(148, 163, 184, 0.9);
+            margin-bottom: 10px;
+            -webkit-app-region: no-drag;
+        }
+
+        .status-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #10b981;
+            animation: statusPulse 2s ease-in-out infinite;
+        }
+
+        .status-dot.listening { background: #f59e0b; animation: statusPulse 0.5s ease-in-out infinite; }
+        .status-dot.speaking { background: #3b82f6; animation: statusPulse 0.3s ease-in-out infinite; }
+
+        /* ─── States ─── */
+        .avatar-container.listening .orb {
+            box-shadow: 0 0 60px rgba(245, 158, 11, 0.5), 0 0 120px rgba(245, 158, 11, 0.2);
+            background: radial-gradient(circle at 35% 35%,
+                rgba(251, 191, 36, 0.9), rgba(245, 158, 11, 0.7),
+                rgba(234, 88, 12, 0.4), rgba(194, 65, 12, 0.2));
+        }
+
+        .avatar-container.speaking .orb {
+            animation: float 1.5s ease-in-out infinite, speakPulse 0.3s ease-in-out infinite;
+        }
+
+        .avatar-container.speaking .mouth {
+            height: 14px;
+            width: 16px;
+            border-radius: 50%;
+            animation: talk 0.3s ease-in-out infinite alternate;
+        }
+
+        .avatar-container.thinking .orb {
+            animation: float 1s ease-in-out infinite, think 1s ease-in-out infinite;
+        }
+
+        /* ─── Animations ─── */
+        @keyframes float {
+            0%, 100% { transform: translateX(-50%) translateY(0); }
+            50% { transform: translateX(-50%) translateY(-8px); }
+        }
+
+        @keyframes glow {
+            from { box-shadow: 0 0 40px rgba(59,130,246,0.3), 0 0 80px rgba(59,130,246,0.1); }
+            to { box-shadow: 0 0 60px rgba(59,130,246,0.5), 0 0 120px rgba(59,130,246,0.2); }
+        }
+
+        @keyframes blink {
+            0%, 45%, 55%, 100% { transform: scaleY(1); }
+            50% { transform: scaleY(0.05); }
+        }
+
+        @keyframes spin { to { transform: translateX(-50%) rotate(360deg); } }
+        @keyframes spinReverse { to { transform: translateX(-50%) rotate(-360deg); } }
+        @keyframes statusPulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+        @keyframes speakPulse { 0%,100%{transform:translateX(-50%) scale(1)} 50%{transform:translateX(-50%) scale(1.03)} }
+        @keyframes talk { from{height:14px;width:16px} to{height:8px;width:20px} }
+        @keyframes think { 0%,100%{filter:hue-rotate(0deg)} 50%{filter:hue-rotate(30deg)} }
+    </style>
+</head>
+<body>
+    <div class="chat-bubble" id="chat-bubble"></div>
+
+    <div class="avatar-container" id="avatar" onclick="onAvatarClick()">
+        <div class="ring"><div class="ring-dot"></div></div>
+        <div class="ring"><div class="ring-dot"></div></div>
+        <div class="orb"></div>
+        <div class="eyes">
+            <div class="eye"></div>
+            <div class="eye"></div>
+        </div>
+        <div class="mouth"></div>
+    </div>
+
+    <div class="platform"></div>
+
+    <div class="status-bar">
+        <div class="status-dot" id="status-dot"></div>
+        <span id="status-text">Ready</span>
+    </div>
+
+    <script>
+        // ─── State Management ───
+        function setState(state) {
+            const avatar = document.getElementById('avatar');
+            avatar.className = 'avatar-container ' + state;
+
+            const dot = document.getElementById('status-dot');
+            dot.className = 'status-dot ' + state;
+
+            const text = document.getElementById('status-text');
+            const labels = {
+                '': 'Ready',
+                'listening': 'Listening...',
+                'speaking': 'Speaking...',
+                'thinking': 'Thinking...',
+            };
+            text.textContent = labels[state] || 'Ready';
+        }
+
+        function showBubble(text, duration) {
+            const bubble = document.getElementById('chat-bubble');
+            bubble.textContent = text;
+            bubble.classList.add('visible');
+
+            if (duration > 0) {
+                setTimeout(() => bubble.classList.remove('visible'), duration);
+            }
+        }
+
+        function hideBubble() {
+            document.getElementById('chat-bubble').classList.remove('visible');
+        }
+
+        function onAvatarClick() {
+            // Communicate with Python backend via eel
+            if (typeof eel !== 'undefined') {
+                eel.on_avatar_click()();
+            }
+        }
+
+        // ─── Python-callable functions ───
+        // These are called from Python via eel.js
+        function js_set_state(state) { setState(state); }
+        function js_show_bubble(text, duration) { showBubble(text, duration || 5000); }
+        function js_hide_bubble() { hideBubble(); }
+
+        // Expose to eel
+        if (typeof eel !== 'undefined') {
+            eel.expose(js_set_state);
+            eel.expose(js_show_bubble);
+            eel.expose(js_hide_bubble);
+        }
+
+        // ─── Eye tracking (follows mouse) ───
+        document.addEventListener('mousemove', (e) => {
+            const eyes = document.querySelectorAll('.eye');
+            eyes.forEach(eye => {
+                const rect = eye.getBoundingClientRect();
+                const cx = rect.left + rect.width / 2;
+                const cy = rect.top + rect.height / 2;
+                const dx = (e.clientX - cx) / window.innerWidth * 4;
+                const dy = (e.clientY - cy) / window.innerHeight * 3;
+                const pupil = eye.querySelector('::after') || eye;
+                eye.style.setProperty('--dx', dx + 'px');
+                eye.style.setProperty('--dy', dy + 'px');
+                if (eye.children[0]) {
+                    eye.children[0].style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+                }
+            });
+        });
+
+        // Show ready state
+        showBubble('Hi! Say "JARVIS" to wake me up.', 5000);
+    </script>
+</body>
+</html>
