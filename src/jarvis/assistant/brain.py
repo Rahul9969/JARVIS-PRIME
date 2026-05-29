@@ -102,6 +102,11 @@ class IntentDetector:
         "stop": [
             r"^(?:stop|shut up|cancel|be quiet|nevermind|never mind|that's enough)$",
         ],
+        "self_improvement": [
+            r"(?:build|create|write|add)\s+(?:a\s+)?(?:new\s+)?(?:tool|feature|capability)\s+(?:to|for|that)\s+(.+)",
+            r"(?:improve|optimize|rewrite)\s+(?:your\s+)?(.+)",
+            r"(?:teach\s+yourself\s+how\s+to|learn\s+how\s+to)\s+(.+)",
+        ],
     }
 
     @classmethod
@@ -310,6 +315,26 @@ class JarvisBrain:
             
         elif intent == "stop":
             return "Standing by."
+
+        elif intent == "self_improvement":
+            # Avoid blocking the main event loop too long by wrapping in a task if possible, 
+            # or just return a response that it's starting, but for now we'll await it.
+            try:
+                from jarvis.core.metacognition import SelfImprovementAgent
+                agent = SelfImprovementAgent(llm_model=self.llm.model)
+                
+                # We need to decide which file to target. For simplicity, if it's a new tool, 
+                # we'll target a generic extensions file or ask the agent to create one.
+                # Let's put new tools in jarvis.assistant.automation for now.
+                target = "src/jarvis/assistant/automation.py"
+                
+                result = await agent.attempt_improvement(target, arg)
+                if result["status"] == "success":
+                    return "I have successfully written and injected the new capability into my brain."
+                else:
+                    return f"I encountered an error while trying to improve myself: {result['message']}"
+            except Exception as e:
+                return f"Self-improvement failed: {e}"
 
         # ─── Conversation (LLM) ───
         else:
