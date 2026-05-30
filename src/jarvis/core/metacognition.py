@@ -102,7 +102,7 @@ class SelfImprovementAgent:
                 print("  [METACOGNITION] ✓ All tests passed!")
                 return True, impl_code, "Tests passed."
 
-            print(f"  [METACOGNITION] ✗ Tests failed. Initiating self-correction...")
+            print(f"  [METACOGNITION] [X] Tests failed. Initiating self-correction...")
             
             # Feed the error back to the LLM
             error_msg = result.stdout + "\n" + result.stderr

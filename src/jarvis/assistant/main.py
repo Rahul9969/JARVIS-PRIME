@@ -119,10 +119,10 @@ def run_text_mode():
 
     print()
     print("=" * 55)
-    print("  ╔═══════════════════════════════════════╗")
-    print("  ║   J.A.R.V.I.S. — PRIME ASSISTANT     ║")
-    print("  ║   Text Mode | Type 'quit' to exit     ║")
-    print("  ╚═══════════════════════════════════════╝")
+    print("  +---------------------------------------+")
+    print("  |   J.A.R.V.I.S. — PRIME ASSISTANT      |")
+    print("  |   Text Mode | Type 'quit' to exit     |")
+    print("  +---------------------------------------+")
     print("=" * 55)
     print()
 
@@ -149,7 +149,7 @@ def run_text_mode():
                 print("\n  JARVIS: Goodbye! Have a great day.\n")
                 break
 
-            response = asyncio.run(brain.process(user_input))
+            response, _ = asyncio.run(brain.process(user_input))
             print(f"  JARVIS: {response}\n")
 
         except KeyboardInterrupt:
@@ -169,10 +169,10 @@ def run_voice_mode():
 
     print()
     print("=" * 55)
-    print("  ╔═══════════════════════════════════════╗")
-    print('  ║   J.A.R.V.I.S. — VOICE MODE          ║')
-    print('  ║   Say "JARVIS" to activate             ║')
-    print("  ╚═══════════════════════════════════════╝")
+    print("  +---------------------------------------+")
+    print('  |   J.A.R.V.I.S. — VOICE MODE           |')
+    print('  |   Say "JARVIS" to activate            |')
+    print("  +---------------------------------------+")
     print("=" * 55)
     print()
 
@@ -194,7 +194,7 @@ def run_voice_mode():
             return
 
         print(f"  You: {command}")
-        response = asyncio.run(brain.process(command))
+        response, _ = asyncio.run(brain.process(command))
         print(f"  JARVIS: {response}")
         voice.speak(response, block=True)
 
@@ -266,10 +266,9 @@ def run_avatar_mode():
     try:
         from jarvis.assistant.desktop_pet import PetController
         pet_controller = PetController()
-        pet_controller.start()
-        print("  [JARVIS] Desktop Pet launched.")
+        print("  [JARVIS] Desktop Pet initializing on main thread...")
     except Exception as e:
-        print(f"  [ERROR] Could not launch desktop pet: {e}")
+        print(f"  [ERROR] Could not initialize desktop pet: {e}")
         print("          Falling back to text mode...\n")
         run_text_mode()
         return
@@ -278,6 +277,7 @@ def run_avatar_mode():
     if voice_engine:
         def on_wake():
             _stop_flag.clear()
+            print("  [JARVIS]: Yes? I'm listening...")
             if pet_controller:
                 pet_controller.set_state("listening")
                 pet_controller.speak("Yes? I'm listening...")
@@ -296,6 +296,8 @@ def run_avatar_mode():
 
             _stop_flag.clear()
 
+            print(f"  [YOU]: {command}")
+
             if pet_controller:
                 pet_controller.set_state("thinking")
                 pet_controller.speak(f'"{command}"')
@@ -305,36 +307,66 @@ def run_avatar_mode():
             if _stop_flag.is_set():
                 return
 
-            response = asyncio.run(brain.process(command))
+            response, avatar_action = asyncio.run(brain.process(command))
 
             # Check stop flag before speaking
             if _stop_flag.is_set():
                 return
 
-            if pet_controller:
-                # Physical commands
-                if "jump" in cmd_lower:
-                    pet_controller.jump()
-                    response = "Boing!"
-                elif "hide" in cmd_lower:
-                    response = "I'm not afraid of anything, sir."
+            print(f"  [JARVIS]: {response}")
 
+            if pet_controller:
+                # Physical commands driven by LLM tools
+                if avatar_action == "jump":
+                    pet_controller.jump()
+                elif avatar_action == "move_left":
+                    pet_controller.move_left()
+                elif avatar_action == "move_right":
+                    pet_controller.move_right()
+                elif avatar_action == "scale_up":
+                    pet_controller.scale(1.2)
+                elif avatar_action == "scale_down":
+                    pet_controller.scale(0.8)
+                elif avatar_action == "hide":
+                    pet_controller.hide()
+                elif avatar_action == "show":
+                    pet_controller.show()
+                elif avatar_action == "shake":
+                    pet_controller.shake()
+
+                # Dynamic expression parsing based on response text
+                expr = ""
+                lower_resp = response.lower()
+                if any(w in lower_resp for w in ["haha", "joke", "funny", "happy", "great", "excellent"]):
+                    expr = "happy"
+                elif any(w in lower_resp for w in ["cute", "love", "sweet", "aww", "sir", "welcome"]):
+                    expr = "cute"
+                
+                pet_controller.set_expression(expr)
                 pet_controller.set_state("speaking")
                 pet_controller.speak(response)
 
             voice_engine.speak(response, block=True)
             if pet_controller:
                 pet_controller.set_state("")
+                pet_controller.set_expression("")
 
         voice_engine.start_wake_word_listener(on_wake=on_wake, on_command=on_command)
 
+        def on_text_command(text: str):
+            import threading
+            # Run the command loop in a new thread so it doesn't freeze the GUI
+            threading.Thread(target=on_command, args=(text,), daemon=True).start()
+
+        if pet_controller:
+            pet_controller.text_command_callback = on_text_command
     # ─── Launch ───
     print()
     print("=" * 55)
-    print("  ╔═══════════════════════════════════════╗")
-    print("  ║   J.A.R.V.I.S. — DESKTOP ENTITY      ║")
-    print("  ║   Living Avatar + Voice + Vision       ║")
-    print("  ╚═══════════════════════════════════════╝")
+    print("  +---------------------------------------+")
+    print("  |   J.A.R.V.I.S. — DESKTOP ENTITY       |")
+    print("  |   Living Avatar + Voice + Vision      |")
+    print("  +---------------------------------------+")
     print("=" * 55)
     print()
     print('  Say "JARVIS" to interact')
@@ -342,8 +374,12 @@ def run_avatar_mode():
     print()
 
     try:
-        while True:
-            time.sleep(1)
+        if pet_controller:
+            # This blocks the main thread and processes PyQt events
+            pet_controller.start_sync()
+        else:
+            while True:
+                time.sleep(1)
     except KeyboardInterrupt:
         if voice_engine:
             voice_engine.stop_listening()

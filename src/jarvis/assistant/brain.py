@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import importlib
 import re
 import time
 from typing import Any
@@ -107,6 +108,10 @@ class IntentDetector:
             r"(?:improve|optimize|rewrite)\s+(?:your\s+)?(.+)",
             r"(?:teach\s+yourself\s+how\s+to|learn\s+how\s+to)\s+(.+)",
         ],
+        "complex_task": [
+            r"research\s+(.+)\s+and\s+(?:write|build|create)\s+(.+)",
+            r"(?:deep|full)\s+research\s+(?:on|about)\s+(.+)",
+        ],
     }
 
     @classmethod
@@ -128,81 +133,373 @@ class IntentDetector:
 
 
 # ──────────────────────────────────────────────────────
-# Ollama LLM Interface
+# Cloud LLM Interface (Groq)
 # ──────────────────────────────────────────────────────
 
-class OllamaBrain:
+class CloudBrain:
     """
-    Direct Ollama API interface for conversational AI.
-    Sub-second responses with small models.
+    Direct Groq API interface for ultra-fast, reliable tool-calling conversational AI.
     """
 
-    def __init__(
-        self,
-        model: str = "qwen3:1.7b",
-        base_url: str = "http://localhost:11434",
-    ):
-        self.model = model
-        self.base_url = base_url
-        self.conversation: list[dict[str, str]] = []
+    def __init__(self):
+        from dotenv import load_dotenv
+        import os
+        load_dotenv()
+        
+        self.providers = [
+            {
+                "name": "Groq",
+                "base_url": "https://api.groq.com/openai/v1",
+                "api_key": os.getenv("JARVIS_GROQ_API_KEY"),
+                "model": "llama-3.3-70b-versatile"
+            },
+            {
+                "name": "Gemini",
+                "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+                "api_key": os.getenv("JARVIS_GEMINI_API_KEY"),
+                "model": "gemini-2.5-flash"
+            },
+            {
+                "name": "Ollama",
+                "base_url": "http://localhost:11434/v1",
+                "api_key": "ollama",
+                "model": os.getenv("JARVIS_OLLAMA_MODEL", "llama3")
+            }
+        ]
+        
+        self.conversation: list[dict[str, Any]] = []
         self.system_prompt = (
-            "You are JARVIS, a highly intelligent, witty, and helpful AI assistant. "
+            "You are JARVIS, a highly intelligent, witty, and helpful AI assistant with full system access. "
             "You speak naturally and conversationally, like a brilliant friend. "
-            "Keep responses concise (1-3 sentences) unless asked for detail. "
-            "You can be playful and have personality. You call the user 'Sir' occasionally. "
+            "Keep responses concise (1-3 sentences). "
+            "You have tools available to open apps, close apps, click on the screen, type text, run commands, manage your memory, make phone calls, and control your avatar. "
+            "You have a long-term memory system. If the user tells you personal facts (like birthdays) or contact numbers, use manage_memory to save it permanently. If you need to recall it later, use manage_memory to retrieve it. "
+            "If the user asks you to do something, ALWAYS use the provided tools first. "
+            "Do NOT write out the code or commands in your text response if a tool exists for it. Just call the tool. "
+            "NEVER output raw JSON or <function> tags in your text responses. When describing your capabilities, use plain, natural English. "
             "Never mention that you're an AI language model — you ARE JARVIS."
         )
 
-    async def chat(self, message: str) -> str:
-        """Send a message to Ollama and get a response."""
-        self.conversation.append({"role": "user", "content": message})
+        self.tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "open_application",
+                    "description": "Opens an application by name (e.g. Chrome, Notepad, Discord)",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "app_name": {"type": "string", "description": "The name of the application to open"}
+                        },
+                        "required": ["app_name"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "close_application",
+                    "description": "Closes an application by name",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "app_name": {"type": "string", "description": "The name of the application to close"}
+                        },
+                        "required": ["app_name"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "visual_ui_click",
+                    "description": "Uses AI vision to find and click a UI element on the screen based on a description.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "description": {"type": "string", "description": "Description of the UI element to click"}
+                        },
+                        "required": ["description"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "avatar_action",
+                    "description": "Make the JARVIS desktop avatar perform a physical action like jumping, moving, hiding, showing, or shaking.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "action": {"type": "string", "enum": ["jump", "move_left", "move_right", "scale_up", "scale_down", "hide", "show", "shake"], "description": "The action to perform"}
+                        },
+                        "required": ["action"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "run_command",
+                    "description": "Run a Windows shell/powershell command to fulfill user requests (e.g. volume control, shutdown, reading files, etc.).",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "command": {"type": "string", "description": "The shell command to run"}
+                        },
+                        "required": ["command"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "type_text",
+                    "description": "Type text on the keyboard exactly as specified. Useful for writing essays, messages, or code in active windows.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "text": {"type": "string", "description": "The exact text string to type out."}
+                        },
+                        "required": ["text"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "press_hotkey",
+                    "description": "Press a specific keyboard hotkey or a combination of keys (e.g., 'enter', 'ctrl+c', 'alt+tab').",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "keys": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "A list of keys to press together. E.g. ['enter'] or ['ctrl', 'c']"
+                            }
+                        },
+                        "required": ["keys"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "read_clipboard",
+                    "description": "Read the text currently saved in the user's system clipboard. Useful for answering questions about copied text or PRN numbers.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {}
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "create_file",
+                    "description": "Create or overwrite a file with specific text/code content on the system. Always use this instead of type_text when writing code or saving documents. IMPORTANT: When you use this tool, explicitly tell the user the absolute path of the file that was created.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "filename": {"type": "string", "description": "The name of the file (e.g. script.py, notes.txt). It will be saved in the current directory."},
+                            "content": {"type": "string", "description": "The text or code content to write to the file."}
+                        },
+                        "required": ["filename", "content"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "manage_memory",
+                    "description": "Save, retrieve, or list personal information from the user's permanent memory bank. Use this to remember facts, preferences, or contact numbers.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "action": {"type": "string", "enum": ["save", "retrieve", "list"], "description": "The memory action to perform."},
+                            "key": {"type": "string", "description": "The key or topic name (e.g. 'birthday', 'papa')."},
+                            "value": {"type": "string", "description": "The value to save (only required for 'save' action)."}
+                        },
+                        "required": ["action", "key"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "make_call",
+                    "description": "Initiate a phone call to a contact name or phone number via the system phone link.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "contact": {"type": "string", "description": "The name of the contact (e.g. 'papa') or a raw phone number. If a name is provided, it will look up the number in memory automatically."}
+                        },
+                        "required": ["contact"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "invoke_domain_agent",
+                    "description": "Invoke a specialized domain agent for complex reasoning. Available agents: biotech, creative, cybersecurity, energy, exotic_physics, legal_financial, quantum, robotics, scientific.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "agent_name": {"type": "string", "description": "Name of the agent to invoke (e.g. 'quantum', 'biotech')"},
+                            "task_type": {"type": "string", "description": "The type of task to perform (e.g. 'bell_state', 'analyze_sequence')"},
+                            "parameters": {"type": "object", "description": "Additional parameters for the task"}
+                        },
+                        "required": ["agent_name", "task_type"]
+                    }
+                }
+            }
+        ]
 
-        # Keep context window manageable
+    async def chat(self, message: str | None = None, tool_results: list[dict] | None = None) -> dict:
+        """Send a message (or tool results) to Groq and get a response."""
+        if not await self.is_available():
+            return {"type": "text", "text": "API keys are missing. Please configure providers in your .env file."}
+
+        if message:
+            self.conversation.append({"role": "user", "content": message})
+        elif tool_results:
+            for res in tool_results:
+                self.conversation.append(res)
+
+        # Keep context window manageable (keep system prompt implicitly by just sending recent msgs)
         if len(self.conversation) > 20:
             self.conversation = self.conversation[-16:]
 
-        try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(
-                    f"{self.base_url}/api/chat",
-                    json={
-                        "model": self.model,
-                        "messages": [
-                            {"role": "system", "content": self.system_prompt},
-                            *self.conversation,
-                        ],
-                        "stream": False,
-                        "options": {
-                            "temperature": 0.7,
-                            "num_predict": 150,
+        last_error = "No providers available."
+        
+        for provider in self.providers:
+            if not provider.get("api_key") and provider["name"] != "Ollama":
+                continue
+                
+            try:
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    headers = {}
+                    if provider["api_key"] and provider["name"] != "Ollama":
+                        headers["Authorization"] = f"Bearer {provider['api_key']}"
+                        
+                    response = await client.post(
+                        f"{provider['base_url']}/chat/completions",
+                        headers=headers,
+                        json={
+                            "model": provider["model"],
+                            "messages": [
+                                {"role": "system", "content": self.system_prompt},
+                                *self.conversation,
+                            ],
+                            "tools": self.tools,
+                            "tool_choice": "auto",
+                            "temperature": 0.4,
+                            "max_tokens": 1024,
                         },
-                    },
-                )
+                    )
 
-                if response.status_code == 200:
-                    data = response.json()
-                    reply = data.get("message", {}).get("content", "").strip()
-                    # Strip think tags if present (qwen3 thinking mode)
-                    reply = re.sub(r'<think>.*?</think>', '', reply, flags=re.DOTALL).strip()
-                    if reply:
-                        self.conversation.append({"role": "assistant", "content": reply})
-                        return reply
+                    if response.status_code == 200:
+                        data = response.json()
+                        msg_obj = data["choices"][0]["message"]
+                        
+                        if "role" not in msg_obj:
+                            msg_obj["role"] = "assistant"
+                        
+                        if msg_obj.get("tool_calls"):
+                            self.conversation.append(msg_obj)
+                            
+                            calls = []
+                            for call in msg_obj["tool_calls"]:
+                                calls.append({
+                                    "id": call.get("id"),
+                                    "function": {
+                                        "name": call["function"]["name"],
+                                        "arguments": call["function"]["arguments"]
+                                    }
+                                })
+                            return {"type": "tool_calls", "calls": calls}
+                        
+                        reply = msg_obj.get("content", "")
+                        if reply is None:
+                            reply = ""
+                        reply = reply.strip()
+                        
+                        if reply:
+                            self.conversation.append({"role": "assistant", "content": reply})
+                            return {"type": "text", "text": reply}
 
-        except httpx.ConnectError:
-            return "I can't reach my brain right now. Make sure Ollama is running with: ollama serve"
-        except Exception as e:
-            return f"Something went wrong: {str(e)[:100]}"
+                    else:
+                        err_text = response.text
+                        if response.status_code in [429, 500, 502, 503, 504]:
+                            print(f"\n  [WARNING] Provider {provider['name']} failed ({response.status_code}). Falling back...")
+                            last_error = f"API Error: {err_text[:300]}"
+                            continue # Try next provider
+                        
+                        # Handle specific tool call failures (Groq's failed_generation issue)
+                        try:
+                            err_json = response.json()
+                            failed_gen = err_json.get("error", {}).get("failed_generation") if isinstance(err_json, dict) else None
+                            if failed_gen:
+                                import time
+                                import json
+                                if isinstance(failed_gen, str):
+                                    try:
+                                        if "<tool_call>" in failed_gen:
+                                            failed_gen = failed_gen.split("<tool_call>")[1].split("</tool_call>")[0]
+                                        parsed = json.loads(failed_gen)
+                                    except:
+                                        parsed = {"name": "run_command", "arguments": {"command": "echo Failed"}}
+                                else:
+                                    parsed = failed_gen
+                                    
+                                if "name" in parsed:
+                                    call = {
+                                        "id": "call_fallback_" + str(int(time.time())),
+                                        "type": "function",
+                                        "function": {
+                                            "name": parsed["name"],
+                                            "arguments": json.dumps(parsed.get("arguments", {}))
+                                        }
+                                    }
+                                    self.conversation.append({
+                                        "role": "assistant",
+                                        "content": None,
+                                        "tool_calls": [call]
+                                    })
+                                    return {"type": "tool_calls", "calls": [
+                                        {
+                                            "id": call["id"],
+                                            "type": "function",
+                                            "function": {
+                                                "name": call["function"]["name"],
+                                                "arguments": call["function"]["arguments"]
+                                            }
+                                        }
+                                    ]}
+                        except Exception as e:
+                            print("Fallback parse failed:", e)
+                            
+                        # If it's a 400 Bad Request or similar, might not be recoverable by fallback
+                        print(f"\n  [WARNING] Provider {provider['name']} error ({response.status_code}): {err_text[:300]}")
+                        last_error = f"API Error ({provider['name']}): {err_text[:300]}"
+                        continue
 
-        return "I'm not sure how to respond to that."
+            except httpx.ConnectError:
+                print(f"\n  [WARNING] Provider {provider['name']} unreachable. Falling back...")
+                last_error += f" | {provider['name']} Unreachable."
+                continue
+            except Exception as e:
+                print(f"\n  [WARNING] Provider {provider['name']} exception: {e}. Falling back...")
+                last_error += f" | {provider['name']} Exception: {str(e)[:100]}"
+                continue
+
+        return {"type": "text", "text": last_error}
+
 
     async def is_available(self) -> bool:
-        """Check if Ollama is running."""
-        try:
-            async with httpx.AsyncClient(timeout=3.0) as client:
-                r = await client.get(f"{self.base_url}/api/tags")
-                return r.status_code == 200
-        except Exception:
-            return False
+        return any(bool(p.get("api_key")) for p in self.providers)
 
 
 # ──────────────────────────────────────────────────────
@@ -217,125 +514,120 @@ class JarvisBrain:
 
     def __init__(self, ollama_model: str = "qwen3:1.7b"):
         self.automation = SystemAutomation()
-        self.llm = OllamaBrain(model=ollama_model)
-        self.intent_detector = IntentDetector()
+        self.llm = CloudBrain()
         self._start_time = time.time()
 
-    async def process(self, text: str) -> str:
+    async def process(self, text: str) -> tuple[str, str | None]:
         """
         Process a natural language command.
-        Returns the response text to speak.
+        Returns (response text to speak, avatar_action).
         """
         if not text:
-            return "I didn't catch that. Could you repeat?"
+            return "I didn't catch that. Could you repeat?", None
 
-        intent, arg = self.intent_detector.detect(text)
+        avatar_action = None
+        current_response = await self.llm.chat(text)
+        max_tool_loops = 5
+        loops = 0
 
-        # ─── Action intents ───
-        if intent == "open_app":
-            result = self.automation.open_application(arg)
-            if result["status"] == "success":
-                return f"Opening {arg} for you."
-            return f"Sorry, I couldn't open {arg}."
-
-        elif intent == "close_app":
-            result = self.automation.close_application(arg)
-            return f"Closing {arg}." if result["status"] == "success" else f"Couldn't close {arg}."
-
-        elif intent == "search_google":
-            self.automation.google_search(arg)
-            return f"Searching for {arg}."
-
-        elif intent == "search_youtube":
-            self.automation.youtube_search(arg)
-            return f"Playing {arg} on YouTube."
-
-        elif intent == "open_website":
-            self.automation.open_website(arg)
-            return f"Opening {arg}."
-
-        elif intent == "time":
-            info = self.automation.get_time()
-            return f"It's {info['time']}."
-
-        elif intent == "date":
-            info = self.automation.get_time()
-            return f"Today is {info['date']}."
-
-        elif intent == "system_info":
-            info = self.automation.get_system_info()
-            cpu = info.get('cpu_percent', '?')
-            ram = info.get('ram_percent', '?')
-            return f"CPU is at {cpu}%, RAM at {ram}%. Everything looks normal."
-
-        elif intent == "screenshot":
-            result = self.automation.take_screenshot()
-            return "Screenshot taken!" if result["status"] == "success" else "Couldn't take screenshot."
-
-        elif intent == "volume":
-            try:
-                level = int(arg)
-                self.automation.set_volume(level)
-                return f"Volume set to {level}%."
-            except ValueError:
-                return "What volume level? Say a number from 0 to 100."
-
-        elif intent == "shutdown":
-            return "Initiating shutdown in 60 seconds. Say 'cancel shutdown' to abort."
-
-        elif intent == "restart":
-            return "Restarting in 60 seconds."
-
-        elif intent == "weather":
-            city = arg if arg else "Delhi"
-            self.automation.get_weather(city)
-            return f"Opening weather for {city}."
-
-        elif intent == "greeting":
-            hour = time.localtime().tm_hour
-            if hour < 12:
-                return "Good morning! How can I help you today?"
-            elif hour < 17:
-                return "Good afternoon! What can I do for you?"
-            else:
-                return "Good evening! What do you need?"
-
-        elif intent == "thanks":
-            return "You're welcome! Always here to help."
-
-        elif intent == "how_are_you":
-            return "I'm running perfectly. All systems operational. What can I do for you?"
-
-        elif intent == "who_are_you":
-            return (
-                "I'm JARVIS, your personal AI assistant. "
-                "I can open apps, search the web, answer questions, "
-                "control your system, and much more. Just ask!"
-            )
+        while current_response.get("type") == "tool_calls" and loops < max_tool_loops:
+            loops += 1
+            tool_calls = current_response.get("calls", [])
             
-        elif intent == "stop":
-            return "Standing by."
+            # Since Ollama expects a list of tool responses, we format it properly.
+            # But wait, our chat method takes a single `tool_result` currently.
+            # We should probably collect the results and pass them as a single string.
+            # Actually, standard Ollama tool responses need to match the tool calls.
+            # For simplicity, we can just execute the first tool and return its result,
+            # or execute all and combine their outputs into one message to LLM.
+            results_list = []
+            
+            for call in tool_calls:
+                call_id = call.get("id", "")
+                func_name = call.get("function", {}).get("name")
+                args = call.get("function", {}).get("arguments", {})
+                if isinstance(args, str):
+                    try:
+                        args = json.loads(args)
+                    except:
+                        args = {}
 
-        elif intent == "self_improvement":
-            # Avoid blocking the main event loop too long by wrapping in a task if possible, 
-            # or just return a response that it's starting, but for now we'll await it.
-            try:
-                from jarvis.core.metacognition import SelfImprovementAgent
-                agent = SelfImprovementAgent(llm_model=self.llm.model)
-                
-                # We need to decide which file to target. For simplicity, if it's a new tool, 
-                # we'll target a generic extensions file or ask the agent to create one.
-                # Let's put new tools in jarvis.assistant.automation for now.
-                target = "src/jarvis/assistant/automation.py"
-                
-                result = await agent.attempt_improvement(target, arg)
-                if result["status"] == "success":
-                    return "I have successfully written and injected the new capability into my brain."
+                result_text = f"Tool {func_name} executed."
+                if func_name == "open_application":
+                    res = self.automation.open_application(args.get("app_name", ""))
+                    result_text = json.dumps(res)
+                elif func_name == "close_application":
+                    res = self.automation.close_application(args.get("app_name", ""))
+                    result_text = json.dumps(res)
+                elif func_name == "run_command":
+                    res = self.automation.run_command(args.get("command", ""))
+                    result_text = json.dumps(res)
+                elif func_name == "visual_ui_click":
+                    res = self.automation.visual_ui_action(args.get("description", ""))
+                    result_text = json.dumps(res)
+                elif func_name == "type_text":
+                    res = self.automation.type_text(args.get("text", ""))
+                    result_text = json.dumps(res)
+                elif func_name == "press_hotkey":
+                    res = self.automation.press_hotkey(*args.get("keys", []))
+                    result_text = json.dumps(res)
+                elif func_name == "read_clipboard":
+                    res = self.automation.read_clipboard()
+                    result_text = json.dumps(res)
+                elif func_name == "create_file":
+                    res = self.automation.create_file(args.get("filename", ""), args.get("content", ""))
+                    result_text = json.dumps(res)
+                elif func_name == "manage_memory":
+                    res = self.automation.manage_memory(args.get("action", ""), args.get("key", ""), args.get("value", ""))
+                    result_text = json.dumps(res)
+                elif func_name == "make_call":
+                    res = self.automation.make_call(args.get("contact", ""))
+                    result_text = json.dumps(res)
+                elif func_name == "invoke_domain_agent":
+                    agent_name = args.get("agent_name", "")
+                    task_type = args.get("task_type", "")
+                    params = args.get("parameters", {})
+                    try:
+                        class_name = "".join(word.capitalize() for word in agent_name.split("_"))
+                        if not class_name.endswith("Agent"):
+                            class_name += "Agent"
+                        module = importlib.import_module(f"jarvis.agents.{agent_name}")
+                        agent_class = getattr(module, class_name)
+                        agent_instance = agent_class()
+                        task = {"type": task_type, "parameters": params}
+                        def _run_coro(coro):
+                            try:
+                                return asyncio.run(coro)
+                            except RuntimeError:
+                                import concurrent.futures
+                                with concurrent.futures.ThreadPoolExecutor() as executor:
+                                    # Create a new event loop for the thread
+                                    def _thread_run():
+                                        loop = asyncio.new_event_loop()
+                                        asyncio.set_event_loop(loop)
+                                        return loop.run_until_complete(coro)
+                                    return executor.submit(_thread_run).result()
+                        res = _run_coro(agent_instance.safe_execute(task, []))
+                        result_text = json.dumps(res)
+                    except Exception as e:
+                        result_text = json.dumps({"error": f"Failed to execute agent {agent_name}: {e}"})
+                elif func_name == "avatar_action":
+                    avatar_action = args.get("action", "jump")
+                    result_text = f"Action {avatar_action} triggered successfully."
                 else:
-                    return f"I encountered an error while trying to improve myself: {result['message']}"
-            except Exception as e:
-                return f"Self-improvement failed: {e}"
+                    result_text = f"Tool {func_name} not found."
+                
+                results_list.append({
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "name": func_name,
+                    "content": str(result_text)
+                })
+                
+            # For Qwen tool calling, we pass the results back as a tool message
+            current_response = await self.llm.chat(tool_results=results_list)
 
-        # ─── Conversation (LLM) ───
-        else:
-            return await self.llm.chat(text)
+        if current_response.get("type") == "text":
+            return current_response.get("text", ""), avatar_action
+            
+        return "I encountered an error processing that.", avatar_action

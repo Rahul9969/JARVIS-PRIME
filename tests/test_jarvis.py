@@ -41,6 +41,8 @@ from jarvis.agents.scientific import ScientificDiscoveryAgent
 # ══════════════════════════════════════════════════════════
 
 class TestResult:
+    __test__ = False
+
     def __init__(self):
         self.passed = 0
         self.failed = 0

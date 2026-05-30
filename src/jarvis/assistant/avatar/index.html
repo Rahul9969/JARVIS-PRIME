@@ -239,6 +239,39 @@
             animation: float 1s ease-in-out infinite, think 1s ease-in-out infinite;
         }
 
+        /* ─── Cute Face ─── */
+        .avatar-container.cute .eye {
+            border-radius: 50% 50% 10px 10px;
+            background: #ffb7b2;
+            height: 24px;
+        }
+        .avatar-container.cute .eye::after {
+            width: 14px;
+            height: 14px;
+            background: #fff;
+            top: 30%;
+        }
+        .avatar-container.cute .mouth {
+            width: 24px;
+            height: 12px;
+            border-radius: 0 0 20px 20px;
+            background: #ff6b6b;
+            top: 102px;
+        }
+
+        /* ─── Happy Face ─── */
+        .avatar-container.happy .eye {
+            border-radius: 50% 50% 0 0;
+            border-bottom: 4px solid transparent;
+            height: 16px;
+            top: 4px;
+        }
+        .avatar-container.happy .mouth {
+            height: 14px;
+            border-radius: 0 0 15px 15px;
+            background: rgba(255, 255, 255, 0.9);
+        }
+
         /* ─── Animations ─── */
         @keyframes float {
             0%, 100% { transform: translateX(-50%) translateY(0); }
@@ -286,9 +319,22 @@
 
     <script>
         // ─── State Management ───
-        function setState(state) {
+        let currentState = '';
+        let currentExpression = '';
+
+        function updateClasses() {
             const avatar = document.getElementById('avatar');
-            avatar.className = 'avatar-container ' + state;
+            avatar.className = `avatar-container ${currentState} ${currentExpression}`.trim();
+        }
+
+        function setExpression(expr) {
+            currentExpression = expr;
+            updateClasses();
+        }
+
+        function setState(state) {
+            currentState = state;
+            updateClasses();
 
             const dot = document.getElementById('status-dot');
             dot.className = 'status-dot ' + state;

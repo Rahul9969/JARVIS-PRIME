@@ -2,3 +2,8 @@ __pycache__/
 *.pyc
 .env
 .pytest_cache/
+jarvis_data/
+calculator.py
+FibonacciSeries.java
+guess_the_number.py
+test_gemini.py

@@ -22,6 +22,7 @@ import time
 import webbrowser
 from pathlib import Path
 from typing import Any
+import json
 
 
 # ──────────────────────────────────────────────────────
@@ -65,15 +66,21 @@ APP_REGISTRY: dict[str, str | list[str]] = {
     "snipping tool": "snippingtool",
     "screen recorder": "ms-screenclip:",
     # Media
-    "spotify": "spotify",
+    "spotify": "spotify:",
     "vlc": "vlc",
     "photos": "ms-photos:",
     # Communication
-    "discord": "discord",
-    "whatsapp": "whatsapp",
-    "telegram": "telegram",
-    "slack": "slack",
-    "zoom": "zoom",
+    "discord": "discord:",
+    "whatsapp": "whatsapp:",
+    "telegram": "tg:",
+    "slack": "slack:",
+    "zoom": "zoommtg:",
+    # Websites mapped as apps
+    "youtube": "https://www.youtube.com",
+    "google": "https://www.google.com",
+    "gmail": "https://mail.google.com",
+    "chatgpt": "https://chat.openai.com",
+    "github": "https://github.com",
 }
 
 # ──────────────────────────────────────────────────────
@@ -117,8 +124,9 @@ class SystemAutomation:
             executable = name_lower
 
         try:
-            # Handle URI-style apps (ms-settings:, ms-photos:, etc.)
-            if isinstance(executable, str) and executable.endswith(":"):
+            if isinstance(executable, str) and executable.startswith("http"):
+                webbrowser.open(executable)
+            elif isinstance(executable, str) and executable.endswith(":"):
                 os.startfile(executable)
             else:
                 subprocess.Popen(
@@ -139,6 +147,10 @@ class SystemAutomation:
         """Close an application by name."""
         name_lower = app_name.lower().strip()
         executable = APP_REGISTRY.get(name_lower, name_lower)
+
+        # Handle websites/URLs
+        if isinstance(executable, str) and executable.startswith("http"):
+            return {"status": "error", "error": f"I cannot close specific websites like {app_name}. I can only close full applications like 'Chrome'."}
 
         try:
             if isinstance(executable, str) and not executable.endswith(":"):
@@ -253,6 +265,17 @@ class SystemAutomation:
         except Exception as e:
             return {"status": "error", "error": str(e)}
 
+    def read_clipboard(self) -> dict[str, Any]:
+        """Read text from the system clipboard."""
+        try:
+            result = subprocess.run(
+                "powershell Get-Clipboard", shell=True, capture_output=True, text=True, timeout=5
+            )
+            text = result.stdout.strip()
+            return {"status": "success", "clipboard_text": text}
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
+
     def type_text(self, text: str) -> dict[str, Any]:
         """Type text using keyboard simulation."""
         try:
@@ -271,6 +294,26 @@ class SystemAutomation:
         except Exception as e:
             return {"status": "error", "error": str(e)}
 
+    # ─── Visual UI Automation ───
+
+    def visual_ui_action(self, instruction: str) -> dict[str, Any]:
+        """
+        Uses the VisionAgent to locate and click on a UI element based on visual description.
+        """
+        try:
+            from jarvis.perception.vision_agent import VisionAgent
+            agent = VisionAgent()
+            success = agent.click_element(instruction)
+            
+            if success:
+                self._log("visual_click", f"Clicked '{instruction}'")
+                return {"status": "success", "message": f"Successfully found and clicked '{instruction}'"}
+            else:
+                self._log("visual_click", f"Failed to locate '{instruction}'", False)
+                return {"status": "error", "message": f"Could not visually locate '{instruction}' on screen."}
+        except Exception as e:
+            return {"status": "error", "message": f"Vision UI failure: {e}"}
+
     # ─── File Operations ───
 
     def open_folder(self, path: str) -> dict[str, Any]:
@@ -280,6 +323,17 @@ class SystemAutomation:
             os.startfile(str(target))
             return {"status": "success", "path": str(target)}
         return {"status": "error", "error": f"Path not found: {path}"}
+
+    def create_file(self, filename: str, content: str) -> dict[str, Any]:
+        """Create or overwrite a file with given content."""
+        try:
+            path = Path.cwd() / filename
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(content)
+            self._log("create_file", str(path.absolute()))
+            return {"status": "success", "file": str(path.absolute()), "message": f"File successfully created at {path.absolute()}"}
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
 
     def list_files(self, path: str = ".", pattern: str = "*") -> dict[str, Any]:
         """List files in a directory."""
@@ -342,3 +396,51 @@ class SystemAutomation:
 
     def get_action_log(self) -> list[dict[str, Any]]:
         return self._action_log[-20:]
+
+    # ─── Memory & Communications ───
+
+    def manage_memory(self, action: str, key: str = "", value: str = "") -> dict[str, Any]:
+        """Save, retrieve, or list personal info from local memory JSON."""
+        mem_dir = Path.cwd() / "jarvis_data"
+        mem_dir.mkdir(exist_ok=True)
+        mem_file = mem_dir / "memory.json"
+        
+        # Load memory
+        memory = {}
+        if mem_file.exists():
+            try:
+                with open(mem_file, "r", encoding="utf-8") as f:
+                    memory = json.load(f)
+            except Exception:
+                pass
+                
+        if action == "save":
+            memory[key] = value
+            with open(mem_file, "w", encoding="utf-8") as f:
+                json.dump(memory, f, indent=4)
+            return {"status": "success", "message": f"Saved '{key}' to memory."}
+        elif action == "retrieve":
+            if key in memory:
+                return {"status": "success", "key": key, "value": memory[key]}
+            return {"status": "not_found", "message": f"No memory found for '{key}'."}
+        elif action == "list":
+            return {"status": "success", "keys": list(memory.keys())}
+        return {"status": "error", "message": "Invalid action. Use 'save', 'retrieve', or 'list'."}
+
+    def make_call(self, contact: str) -> dict[str, Any]:
+        """Initiate a phone call. If contact is a name, look it up in memory first."""
+        # Check if contact is a number
+        number = contact
+        if not any(char.isdigit() for char in contact):
+            mem = self.manage_memory("retrieve", contact.lower())
+            if mem["status"] == "success":
+                number = mem["value"]
+            else:
+                return {"status": "error", "message": f"Contact '{contact}' not found in memory. Please ask user for the number and save it first."}
+        
+        try:
+            os.startfile(f"tel:{number}")
+            self._log("make_call", f"Calling {contact} ({number})")
+            return {"status": "success", "message": f"Initiating call to {contact} ({number})"}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
