@@ -1,4 +1,4 @@
-![JARVIS-PRIME Banner](file:///C:/Users/Rahul/.gemini/antigravity-ide/brain/a98c11db-f924-41c9-a77f-2582e919caf1/jarvis_banner_1780149275797.png)
+![JARVIS-PRIME Banner](assets/jarvis_banner.png)
 
 # 🧠 JARVIS-PRIME: The Advanced Desktop Entity
 
@@ -48,6 +48,15 @@ JARVIS_GROQ_API_KEY="your_groq_key_here"
 JARVIS_GEMINI_API_KEY="your_gemini_key_here"
 JARVIS_OLLAMA_MODEL="llama3"
 ```
+
+### 5. Run Automatically on Startup (Windows)
+To have JARVIS-PRIME launch automatically every time you turn on your laptop:
+1. Press `Win + R`, type `shell:startup`, and press Enter.
+2. In the folder that opens, right-click -> **New** -> **Shortcut**.
+3. For the location, type: `pythonw -m jarvis.assistant` (Use `pythonw` to hide the console window).
+4. Click **Next**, name the shortcut `JARVIS-PRIME`, and click **Finish**.
+5. Right-click the new shortcut, go to **Properties**, and set the **Start in** field to your `JARVIS-PRIME\src` folder path (e.g. `D:\Python project\src`).
+6. JARVIS will now wake up automatically when you log into Windows!
 
 ---
 
